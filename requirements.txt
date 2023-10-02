@@ -1,0 +1,8 @@
+protobuf
+cpm_kernels
+gradio
+mdtex2html
+sentencepiece
+accelerate
+sse-starlette
+
