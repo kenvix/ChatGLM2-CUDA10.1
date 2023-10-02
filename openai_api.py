@@ -4,6 +4,8 @@
 # Visit http://localhost:8000/docs for documents.
 
 
+import json
+import os
 import time
 import torch
 import uvicorn
@@ -135,7 +137,7 @@ async def predict(query: str, history: List[List[str]], model_id: str):
         finish_reason=None
     )
     chunk = ChatCompletionResponse(model=model_id, choices=[choice_data], object="chat.completion.chunk")
-    yield "{}".format(chunk.json(exclude_unset=True, ensure_ascii=False))
+    yield json.dumps(chunk.dict(exclude_unset=True), ensure_ascii=False)
 
     current_length = 0
 
@@ -152,7 +154,7 @@ async def predict(query: str, history: List[List[str]], model_id: str):
             finish_reason=None
         )
         chunk = ChatCompletionResponse(model=model_id, choices=[choice_data], object="chat.completion.chunk")
-        yield "{}".format(chunk.json(exclude_unset=True, ensure_ascii=False))
+        yield json.dumps(chunk.dict(exclude_unset=True), ensure_ascii=False)
 
 
     choice_data = ChatCompletionResponseStreamChoice(
@@ -161,17 +163,34 @@ async def predict(query: str, history: List[List[str]], model_id: str):
         finish_reason="stop"
     )
     chunk = ChatCompletionResponse(model=model_id, choices=[choice_data], object="chat.completion.chunk")
-    yield "{}".format(chunk.json(exclude_unset=True, ensure_ascii=False))
+    yield json.dumps(chunk.dict(exclude_unset=True), ensure_ascii=False)
     yield '[DONE]'
 
 
 
 if __name__ == "__main__":
+    from loguru import logger 
+
+    port = int(os.getenv('PORT', 7500))
+    device = os.getenv('DEVICE', 'cuda')
+    preallocation = int(os.getenv('PREALLOCATION', -1))
+
+    logger.info("Port: %d, Preallocation: %d" % (port, preallocation))
+
+    if preallocation > 0:
+        preallocation = int(preallocation / 4)
+        torch.zeros((preallocation), device=device)
+        logger.info("Preallocation Done")
+
+    logger.info("Loading model")
     tokenizer = AutoTokenizer.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True)
-    model = AutoModel.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True).cuda()
+    model = AutoModel.from_pretrained("THUDM/chatglm2-6b", trust_remote_code=True, device=device)
     # 多显卡支持，使用下面两行代替上面一行，将num_gpus改为你实际的显卡数量
     # from utils import load_model_on_gpus
     # model = load_model_on_gpus("THUDM/chatglm2-6b", num_gpus=2)
     model.eval()
-
-    uvicorn.run(app, host='0.0.0.0', port=8000, workers=1)
+   
+    while True:
+        uvicorn.run(app, host='0.0.0.0', port=port, workers=1)
+        logger.warning("Server is down, restart after 5s")
+        time.sleep(5)
